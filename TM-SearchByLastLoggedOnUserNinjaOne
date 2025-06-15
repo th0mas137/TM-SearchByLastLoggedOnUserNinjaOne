@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         NinjaOne – Last-login filter toggle
-// @namespace    https://teamtel.rmmservice.eu
+// @namespace    https://tampermonkey.net
 // @version      3.3
 // @description  Adds "Last-login" pill.
 // @author       Thomas
 // @match        https://teamtel.rmmservice.eu/*
+// @updateURL   https://raw.githubusercontent.com/th0mas137/TM-Hudu3cxAutoLogin/refs/heads/main/Hudu3cxAutoLogin.js
+// @downloadURL https://raw.githubusercontent.com/th0mas137/TM-Hudu3cxAutoLogin/refs/heads/main/Hudu3cxAutoLogin.js
 // @grant        none
 // ==/UserScript==
 
