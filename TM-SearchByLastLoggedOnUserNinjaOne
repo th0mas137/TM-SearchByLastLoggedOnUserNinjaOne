@@ -1,0 +1,135 @@
+// ==UserScript==
+// @name         NinjaOne – Last-login filter toggle
+// @namespace    https://teamtel.rmmservice.eu
+// @version      3.3
+// @description  Adds "Last-login" pill.
+// @author       Thomas
+// @match        https://teamtel.rmmservice.eu/*
+// @grant        none
+// ==/UserScript==
+
+(() => {
+  /* ---------- constants ---------- */
+  const ROW_H = 60;          // px per NinjaOne row
+  const DASH_RE = /^#\/customerDashboard\/\d+\/overview$/;
+
+  /* ---------- state -------------- */
+  let cached   = [];         // full device list
+  let overlay  = null;       // our overlay container
+  let pillOn   = false;      // pill state
+
+  /* ---------- helpers ------------ */
+  const hideNative = h =>
+    document.querySelectorAll('.ReactVirtualized__Table__row')
+            .forEach(r => (r.style.display = h ? 'none' : ''));
+
+  const ensureOverlay = grid => {
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'tm-overlay';
+    overlay.style.cssText =
+      'position:absolute;top:0;left:0;right:0;will-change:transform;z-index:15;background:white;';
+    grid.appendChild(overlay);
+    return overlay;
+  };
+
+  const restore = () => {
+    overlay?.remove(); overlay = null;
+    hideNative(false);
+  };
+
+  const render = list => {
+    const grid = document.querySelector('.ReactVirtualized__Grid');
+    if (!grid) return;
+
+    /* NEW ⇣ — make sure the list starts at the very top */
+    grid.scrollTop = 0;
+    const inner = grid.querySelector('.ReactVirtualized__Grid__innerScrollContainer');
+    if (inner) inner.style.transform = 'translateY(0px)';
+
+    const o = ensureOverlay(grid);
+    o.innerHTML = '';
+
+    if (!list.length) { o.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No matches</div>'; return; }
+
+    list.forEach((d,i)=>{
+      const devId = d.nodeStatus?.nodeId ?? d.id;
+      const row   = document.createElement('div');
+      row.className = 'ReactVirtualized__Table__row';
+      row.style.cssText = `position:absolute;left:0;right:0;height:${ROW_H}px;top:${i*ROW_H}px;cursor:pointer;border-bottom:1px solid #eee;`;
+      row.innerHTML = `
+        <div class="ReactVirtualized__Table__rowColumn table-cell entity-cell" style="overflow:hidden;flex:1 1 1px;">
+          <li class="horizontal-tile narrow">
+            <div class="border warning css-1x7gnpu ewjswtc0">
+              <hgroup class="flex-full not-scrollable" data-test-node-id="${devId}">
+                <div>
+                  <h4><a href="#/deviceDashboard/${devId}/overview" style="color:#0066cc;text-decoration:none;">${d.name}</a></h4>
+                  <small><span><strong>Connected</strong></span></small>
+                </div>
+                <div>
+                  <small class="description">${d.customerName ?? ''}<div>Last login by <strong>${d.lastLoggedInUser ?? '—'}</strong></div></small>
+                </div>
+              </hgroup>
+            </div>
+          </li>
+        </div>`;
+      row.onclick = ()=>{ location.hash = `#/deviceDashboard/${devId}/overview`; };
+      o.appendChild(row);
+    });
+
+    o.style.height = `${list.length*ROW_H}px`;
+  };
+
+  /* ---------- fetch hook ---------- */
+  const origFetch = window.fetch;
+  window.fetch = async function(i,init){
+    if(typeof i==='string' && i.includes('/swb/s3/query/v2/customerdashboard/devices/')){
+      if(pillOn) return new Response(JSON.stringify({dashboardNodeList:cached}),{status:200,headers:{'Content-Type':'application/json'}});
+      if(!i.includes('name=')) {
+        const r=await origFetch.call(this,i,init);
+        cached=(await r.clone().json()).dashboardNodeList??[];
+        return r;
+      }
+    }
+    return origFetch.call(this,i,init);
+  };
+
+  /* ---------- UI pill ------------- */
+  function addPill(){
+    const bar=document.querySelector('.entity-list-toolbar > div');
+    if(!bar){ setTimeout(addPill,300); return; }
+    if(document.getElementById('tm-lastlogin-pill')) return;
+
+    const pill=document.createElement('span');
+    pill.id='tm-lastlogin-pill'; pill.textContent='Last-login';
+    pill.className='filter m-r-sm'; pill.style.cursor='pointer';
+    pill.onclick=()=>{ pillOn=!pillOn; pill.classList.toggle('active',pillOn); processSearch(); };
+    bar.appendChild(pill);
+  }
+
+  /* ------ search hook ------------ */
+  let box;
+  function hookSearch(){
+    box=document.querySelector('input[placeholder="Filter by Name"]');
+    if(!box){ setTimeout(hookSearch,300); return; }
+    if(box.dataset.tmHooked) return;
+    box.dataset.tmHooked='1';
+    box.addEventListener('input',e=>{ if(pillOn) e.stopImmediatePropagation(); processSearch(); },true);
+  }
+
+  function processSearch(){
+    if(!pillOn){ restore(); return; }
+    const q=(box?.value||'').trim().toLowerCase();
+    if(!q){ hideNative(true); ensureOverlay(document.querySelector('.ReactVirtualized__Grid')).innerHTML='<div style="padding:20px;text-align:center;">Type a user…</div>'; return; }
+    const hits=cached.filter(d=>(d.lastLoggedInUser||'').toLowerCase().includes(q));
+    hideNative(true); render(hits);
+  }
+
+  /* ---------- route guard -------- */
+  function check() {
+    if (DASH_RE.test(location.hash)) { addPill(); hookSearch(); }
+    else cleanup();
+  }
+  window.addEventListener('popstate', check);   // SPA nav safety
+  setInterval(check, 1500);                     // fallback poll
+})();
